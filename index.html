@@ -65,7 +65,7 @@
             recoilOffset: { x: 0, y: 0 }
         };
 
-        // Teammate object (optional AI)
+        // Teammate object
         let teammate = {
             x: canvas.width / 2 - 50,
             y: canvas.height / 2 - 50,
@@ -76,7 +76,7 @@
             weapon: { name: 'pistol', damage: 8, rate: 600, spread: 0.1, recoil: 1, shots: 1, range: Infinity },
             lastShot: 0,
             angle: 0,
-            active: false  // Starts inactive, toggled via button
+            active: false
         };
 
         // Game state
@@ -103,7 +103,7 @@
         let enemySpeed = 2;
         let spawnRate = 5000;
         let backgroundOffset = 0;
-        let isShooting = false;  // NEW: Track mouse hold
+        let isShooting = false;
 
         // Initialize stars
         for (let i = 0; i < 50; i++) {
@@ -131,7 +131,7 @@
             }
         });
 
-        // Bullet class (No explosive properties)
+        // Bullet class
         class Bullet {
             constructor(x, y, dx, dy, spread, owner) {
                 this.x = x;
@@ -144,7 +144,7 @@
                 this.range = owner.weapon.range;
                 this.distanceTraveled = 0;
                 this.isFlame = owner.weapon.name === 'flamethrower';
-                this.owner = owner;  // Track who fired the bullet
+                this.owner = owner;
             }
             update() {
                 this.x += this.dx * this.speed;
@@ -371,9 +371,8 @@
         }
 
         // Shooting function
-        function shoot() {
+        function shoot(shooter = player) {
             const now = Date.now();
-            const shooter = arguments[0] || player;  // Default to player, allow teammate to call
             if (now - shooter.lastShot < shooter.weapon.rate) return;
             shooter.lastShot = now;
 
@@ -401,6 +400,15 @@
         // Toggle teammate
         function toggleTeammate() {
             teammate.active = !teammate.active;
+            if (teammate.active) {
+                // Reset teammate state when activated
+                teammate.x = player.x - 50;
+                teammate.y = player.y - 50;
+                teammate.hp = 50;
+                teammate.bullets = [];
+                teammate.lastShot = 0;
+            }
+            console.log('Teammate toggled:', teammate.active); // Debug log
         }
 
         // Spawn enemies
@@ -450,7 +458,7 @@
             return dist < obj.radius + bush.radius;
         }
 
-        // Upgrade system (No explosives)
+        // Upgrade system
         function buyUpgrade(type) {
             if (type === 'shotgun' && score >= 100) {
                 player.weapon = { name: 'shotgun', damage: 20, rate: 800, spread: 0.2, recoil: 5, shots: 5, range: Infinity };
@@ -466,7 +474,7 @@
                 player.hp = Math.min(player.hp + 50, 100);
                 score -= 200;
             } else if (type === 'flamethrower' && score >= 600) {
-                player.weapon = { name: 'flamethrower', damage: 5, rate: 50, spread: 0.2, recoil: 1, shots: 3, range: 100 };
+                player.weapon = { name: 'flamethrower', damage: 5, rate: 50, spread: 0.2, recoil: 1, shots: 3, range: 200 }; // Doubled from 100 to 200
                 score -= 600;
             }
             scoreDisplay.textContent = score;
@@ -480,7 +488,7 @@
             ctx.rotate(shooter.angle);
 
             const bodyGradient = ctx.createRadialGradient(0, 0, 5, 0, 0, shooter.radius);
-            bodyGradient.addColorStop(0, shooter === teammate ? '#00CED1' : '#888'); // Teammate is turquoise
+            bodyGradient.addColorStop(0, shooter === teammate ? '#00CED1' : '#888');
             bodyGradient.addColorStop(1, '#444');
             ctx.beginPath();
             ctx.arc(0, 0, shooter.radius, 0, Math.PI * 2);
@@ -611,7 +619,7 @@
                 let dx = player.x - teammate.x;
                 let dy = player.y - teammate.y;
                 let dist = Math.sqrt(dx * dx + dy * dy);
-                if (dist > 50) {  // Follow player, stay 50px away
+                if (dist > 50) {
                     let newX = teammate.x + (dx / dist) * teammate.speed;
                     let newY = teammate.y + (dy / dist) * teammate.speed;
                     let collided = false;
@@ -630,14 +638,16 @@
                         teammate.y = newY;
                     }
                 }
-                // Teammate shooting
-                if (isShooting) shoot(teammate);
+                // Teammate shooting only when player shoots, with cooldown
+                if (isShooting) {
+                    shoot(teammate);
+                }
             }
 
             drawPlayer(player);
             if (teammate.active) drawPlayer(teammate);
 
-            // Continuous shooting
+            // Continuous shooting for player
             if (isShooting) shoot();
 
             // Player bullets
@@ -730,7 +740,7 @@
                     teammate.hp -= 10;
                     enemy.die();
                     enemies.splice(eIndex, 1);
-                    if (teammate.hp <= 0) teammate.active = false;  // Teammate "dies"
+                    if (teammate.hp <= 0) teammate.active = false;
                 }
             });
 
