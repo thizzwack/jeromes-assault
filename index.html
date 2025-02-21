@@ -33,7 +33,7 @@
 </head>
 <body>
     <h1>Jerome’s Assault</h1>
-    <p>Score: <span id="score">0</span> | Round: <span id="round">1</span> | HP: <span id="health">100</span></p>
+    <p>Score: <span id="score">1000</span> | Round: <span id="round">1</span> | HP: <span id="health">100</span></p>
     <div id="upgrades">
         <button onclick="buyUpgrade('shotgun')">Shotgun (100)</button>
         <button onclick="buyUpgrade('rifle')">Rifle (500)</button>
@@ -74,15 +74,16 @@
         let powerUps = [];
         let stars = [];
         let walls = [
-            { x: 200, y: 150, width: 100, height: 20 },
+            { x: 200, y: 150, width: 100, height: 20 },  // Representing fallen logs
             { x: 500, y: 400, width: 20, height: 100 },
             { x: 300, y: 500, width: 150, height: 20 }
         ];
-        let dunes = [
+        let bushes = [  // Replacing dunes with bushes
             { x: 150, y: 300, radius: 40 },
             { x: 600, y: 200, radius: 50 }
         ];
-        let score = 0;
+        let bulletsToExplode = [];
+        let score = 1000;  // Start with 1000 points
         let round = 1;
         let roundTime = 0;
         let roundTransitionTime = 0;
@@ -113,7 +114,7 @@
             player.angle = Math.atan2(mouseY - player.y, mouseX - player.x);
         });
 
-        // Bullet class (Fixed explosion logic)
+        // Bullet class
         class Bullet {
             constructor(x, y, dx, dy, spread) {
                 this.x = x;
@@ -127,7 +128,7 @@
                 this.explosionRadius = player.weapon.explosionRadius;
                 this.distanceTraveled = 0;
                 this.isFlame = player.weapon.name === 'flamethrower';
-                this.hasExploded = false; // NEW: Prevent multiple explosions
+                this.hasExploded = false;
             }
             update() {
                 this.x += this.dx * this.speed;
@@ -144,21 +145,12 @@
                 ctx.fill();
             }
             explode() {
-                if (this.hasExploded || this.explosionRadius === 0) return; // Prevent multiple calls
+                if (this.hasExploded || this.explosionRadius === 0) return;
                 this.hasExploded = true;
                 for (let i = 0; i < 20; i++) {
                     particles.push(new Particle(this.x, this.y, Math.random() < 0.5 ? 'orange' : 'yellow'));
                 }
                 particles.push({ x: this.x, y: this.y, radius: 0, maxRadius: this.explosionRadius, life: 20, color: 'rgba(255, 165, 0, 0.5)' });
-                enemies.forEach(enemy => {
-                    const dist = Math.sqrt((enemy.x - this.x) ** 2 + (enemy.y - this.y) ** 2);
-                    if (dist < this.explosionRadius) {
-                        enemy.hp -= this.damage / 10;
-                        enemy.knockback.x += (enemy.x - this.x) / dist * 5;
-                        enemy.knockback.y += (enemy.y - this.y) / dist * 5;
-                        if (enemy.hp <= 0) enemy.die();
-                    }
-                });
             }
         }
 
@@ -261,21 +253,21 @@
                 if (type === 'militant') {
                     this.radius = 12;
                     this.hp = 1;
-                    this.color = '#8B4513';
-                    this.turbanColor = '#FFD700';
+                    this.color = '#556B2F'; // Dark olive green
+                    this.turbanColor = '#8B4513'; // Brown
                 } else if (type === 'warrior') {
                     this.radius = 15;
                     this.speed *= 1.5;
                     this.hp = 2;
-                    this.color = '#A0522D';
-                    this.turbanColor = '#228B22';
+                    this.color = '#6B8E23'; // Olive drab
+                    this.turbanColor = '#228B22'; // Forest green
                     this.shootCooldown = Math.random() * 2000 + 1000;
                 } else if (type === 'commander') {
                     this.radius = 20;
                     this.speed *= 0.7;
                     this.hp = 4;
-                    this.color = '#2F4F4F';
-                    this.turbanColor = '#800080';
+                    this.color = '#2F4F4F'; // Dark slate gray
+                    this.turbanColor = '#483D8B'; // Dark slate blue
                     this.spawnCooldown = 5000;
                 }
                 this.knockback = { x: 0, y: 0 };
@@ -368,7 +360,7 @@
                 const knockbackForce = player.weapon.name === 'shotgun' ? 5 : player.weapon.explosionRadius > 0 ? 8 : 2;
                 this.knockback.x = -bullet.dx * knockbackForce;
                 this.knockback.y = -bullet.dy * knockbackForce;
-                if (this.hp <= 0) this.die(); // Ensure die() is called here
+                if (this.hp <= 0) this.die();
             }
             checkWallCollision(wall, x = this.x, y = this.y) {
                 return (
@@ -454,10 +446,10 @@
             );
         }
 
-        // Dune collision
-        function checkDuneCollision(obj, dune) {
-            const dist = Math.sqrt((obj.x - dune.x) ** 2 + (obj.y - dune.y) ** 2);
-            return dist < obj.radius + dune.radius;
+        // Bush collision
+        function checkBushCollision(obj, bush) {
+            const dist = Math.sqrt((obj.x - bush.x) ** 2 + (obj.y - bush.y) ** 2);
+            return dist < obj.radius + bush.radius;
         }
 
         // Upgrade system
@@ -489,7 +481,7 @@
             healthDisplay.textContent = player.hp;
         }
 
-        // Realistic player drawing
+        // Player drawing
         function drawPlayer() {
             ctx.save();
             ctx.translate(player.x + player.recoilOffset.x, player.y + player.recoilOffset.y);
@@ -507,13 +499,13 @@
             ctx.stroke();
 
             const helmetGradient = ctx.createLinearGradient(0, -12, 0, -5);
-            helmetGradient.addColorStop(0, '#00FFFF');
-            helmetGradient.addColorStop(1, '#00CCCC');
+            helmetGradient.addColorStop(0, '#228B22'); // Forest green helmet
+            helmetGradient.addColorStop(1, '#006400'); // Dark green
             ctx.beginPath();
             ctx.arc(0, -8, 10, 0, Math.PI * 2);
             ctx.fillStyle = helmetGradient;
             ctx.fill();
-            ctx.strokeStyle = '#006666';
+            ctx.strokeStyle = '#004d00';
             ctx.stroke();
             ctx.beginPath();
             ctx.arc(-3, -10, 3, 0, Math.PI);
@@ -549,22 +541,27 @@
         function update() {
             ctx.clearRect(0, 0, canvas.width, canvas.height);
 
-            // Draw background (Desert landscape)
+            // Wilderness-themed background
             const skyGradient = ctx.createLinearGradient(0, 0, 0, canvas.height);
-            skyGradient.addColorStop(0, '#87CEEB');
-            skyGradient.addColorStop(1, '#FFA500');
+            skyGradient.addColorStop(0, '#87CEFA'); // Light blue sky
+            skyGradient.addColorStop(1, '#228B22'); // Forest green ground
             ctx.fillStyle = skyGradient;
             ctx.fillRect(0, 0, canvas.width, canvas.height);
 
-            // Scrolling dunes
+            // Scrolling trees
             backgroundOffset += 0.5;
             if (backgroundOffset > canvas.height) backgroundOffset = 0;
-            ctx.fillStyle = '#F4A460';
+            ctx.fillStyle = '#006400'; // Dark green for trees
             for (let i = -1; i < 2; i++) {
                 ctx.beginPath();
-                ctx.arc(100, canvas.height - 50 + backgroundOffset + i * canvas.height, 200, Math.PI, 2 * Math.PI);
-                ctx.arc(400, canvas.height - 30 + backgroundOffset + i * canvas.height, 150, Math.PI, 2 * Math.PI);
-                ctx.arc(700, canvas.height - 40 + backgroundOffset + i * canvas.height, 180, Math.PI, 2 * Math.PI);
+                ctx.moveTo(100, canvas.height - 50 + backgroundOffset + i * canvas.height);
+                ctx.lineTo(120, canvas.height - 100 + backgroundOffset + i * canvas.height);
+                ctx.lineTo(140, canvas.height - 50 + backgroundOffset + i * canvas.height);
+                ctx.fill();
+                ctx.beginPath();
+                ctx.moveTo(400, canvas.height - 60 + backgroundOffset + i * canvas.height);
+                ctx.lineTo(420, canvas.height - 120 + backgroundOffset + i * canvas.height);
+                ctx.lineTo(440, canvas.height - 60 + backgroundOffset + i * canvas.height);
                 ctx.fill();
             }
 
@@ -578,17 +575,17 @@
                 ctx.fill();
             });
 
-            // Draw walls
+            // Draw walls (logs)
             walls.forEach(wall => {
-                ctx.fillStyle = '#8B4513';
+                ctx.fillStyle = '#8B4513'; // Brown logs
                 ctx.fillRect(wall.x, wall.y, wall.width, wall.height);
             });
 
-            // Draw dunes (hiding areas)
-            dunes.forEach(dune => {
+            // Draw bushes
+            bushes.forEach(bush => {
                 ctx.beginPath();
-                ctx.arc(dune.x, dune.y, dune.radius, 0, Math.PI * 2);
-                ctx.fillStyle = '#D2B48C';
+                ctx.arc(bush.x, bush.y, bush.radius, 0, Math.PI * 2);
+                ctx.fillStyle = '#228B22'; // Green bushes
                 ctx.fill();
             });
 
@@ -653,17 +650,16 @@
 
                 let shouldRemove = bullet.x < 0 || bullet.x > canvas.width || bullet.y < 0 || bullet.y > canvas.height || bullet.distanceTraveled > bullet.range;
 
-                // Check wall and dune collisions
                 walls.forEach(wall => {
                     if (checkBulletWallCollision(bullet, wall)) {
                         shouldRemove = true;
-                        if (bullet.explosionRadius > 0 && !bullet.hasExploded) bullet.explode();
+                        if (bullet.explosionRadius > 0 && !bullet.hasExploded) bulletsToExplode.push(bullet);
                     }
                 });
-                dunes.forEach(dune => {
-                    if (checkDuneCollision(bullet, dune)) {
+                bushes.forEach(bush => {
+                    if (checkBushCollision(bullet, bush)) {
                         shouldRemove = true;
-                        if (bullet.explosionRadius > 0 && !bullet.hasExploded) bullet.explode();
+                        if (bullet.explosionRadius > 0 && !bullet.hasExploded) bulletsToExplode.push(bullet);
                     }
                 });
 
@@ -672,22 +668,45 @@
                     continue;
                 }
 
-                // Check enemy collisions
                 for (let eIndex = enemies.length - 1; eIndex >= 0; eIndex--) {
                     const enemy = enemies[eIndex];
                     if (checkCollision(bullet, enemy)) {
                         enemy.hit(bullet);
-                        if (bullet.explosionRadius > 0 && !bullet.hasExploded) bullet.explode();
-                        player.bullets.splice(bIndex, 1);
+                        if (bullet.explosionRadius > 0 && !bullet.hasExploded) bulletsToExplode.push(bullet);
+                        else player.bullets.splice(bIndex, 1);
                         if (enemy.hp <= 0) {
                             enemies.splice(eIndex, 1);
                             score += enemy.type === 'commander' ? 50 : enemy.type === 'warrior' ? 30 : 20;
                             scoreDisplay.textContent = score;
                         }
-                        break; // Exit enemy loop after hit
+                        break;
                     }
                 }
             }
+
+            // Process explosions after bullet updates
+            bulletsToExplode.forEach(bullet => {
+                bullet.explode();
+                enemies.forEach(enemy => {
+                    const dist = Math.sqrt((enemy.x - bullet.x) ** 2 + (enemy.y - bullet.y) ** 2);
+                    if (dist < bullet.explosionRadius) {
+                        enemy.hp -= bullet.damage / 10;
+                        enemy.knockback.x += (enemy.x - bullet.x) / dist * 5;
+                        enemy.knockback.y += (enemy.y - bullet.y) / dist * 5;
+                        if (enemy.hp <= 0) {
+                            const eIndex = enemies.indexOf(enemy);
+                            if (eIndex !== -1) {
+                                enemies.splice(eIndex, 1);
+                                score += enemy.type === 'commander' ? 50 : enemy.type === 'warrior' ? 30 : 20;
+                                scoreDisplay.textContent = score;
+                            }
+                        }
+                    }
+                });
+                const bIndex = player.bullets.indexOf(bullet);
+                if (bIndex !== -1) player.bullets.splice(bIndex, 1);
+            });
+            bulletsToExplode = [];
 
             // Enemies
             enemies.forEach((enemy, eIndex) => {
@@ -715,8 +734,8 @@
                 walls.forEach(wall => {
                     if (checkBulletWallCollision(bullet, wall)) shouldRemove = true;
                 });
-                dunes.forEach(dune => {
-                    if (checkDuneCollision(bullet, dune)) shouldRemove = true;
+                bushes.forEach(bush => {
+                    if (checkBushCollision(bullet, bush)) shouldRemove = true;
                 });
 
                 if (shouldRemove) {
