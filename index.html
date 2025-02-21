@@ -68,6 +68,9 @@
         let enemies = [];
         let particles = [];
         let muzzleFlashes = [];
+        let enemyBullets = []; // NEW: For enemy projectiles
+        let powerUps = []; // NEW: For power-ups
+        let stars = []; // NEW: Background stars
         let score = 0;
         let round = 1;
         let roundTime = 0;
@@ -75,6 +78,16 @@
         let inTransition = false;
         let enemySpeed = 2;
         let spawnRate = 5000;
+
+        // Initialize stars
+        for (let i = 0; i < 50; i++) {
+            stars.push({
+                x: Math.random() * canvas.width,
+                y: Math.random() * canvas.height,
+                radius: Math.random() * 2,
+                speed: Math.random() * 0.5 + 0.5
+            });
+        }
 
         // Input handling
         const keys = {};
@@ -111,16 +124,38 @@
             }
         }
 
+        // EnemyBullet class (NEW)
+        class EnemyBullet {
+            constructor(x, y, dx, dy) {
+                this.x = x;
+                this.y = y;
+                this.dx = dx;
+                this.dy = dy;
+                this.speed = 5;
+                this.radius = 4;
+            }
+            update() {
+                this.x += this.dx * this.speed;
+                this.y += this.dy * this.speed;
+            }
+            draw() {
+                ctx.beginPath();
+                ctx.arc(this.x, this.y, this.radius, 0, Math.PI * 2);
+                ctx.fillStyle = 'red';
+                ctx.fill();
+            }
+        }
+
         // Blood particle class
         class Particle {
-            constructor(x, y) {
+            constructor(x, y, color = null) { // Modified: Optional color parameter
                 this.x = x;
                 this.y = y;
                 this.radius = Math.random() * 3 + 1;
                 this.dx = (Math.random() - 0.5) * 4;
                 this.dy = (Math.random() - 0.5) * 4;
                 this.life = 30;
-                this.color = Math.random() < 0.5 ? '#8B0000' : '#FF0000';
+                this.color = color || (Math.random() < 0.5 ? '#8B0000' : '#FF0000'); // Default to blood if no color
             }
             update() {
                 this.x += this.dx;
@@ -162,7 +197,7 @@
             }
         }
 
-        // Enemy class (Middle Eastern-inspired)
+        // Enemy class (Updated with AI)
         class Enemy {
             constructor(type) {
                 const side = Math.floor(Math.random() * 4);
@@ -175,24 +210,25 @@
                 this.speed = enemySpeed;
                 this.angle = 0;
 
-                // Define enemy types with size and HP variations
                 if (type === 'militant') { // Small, fast
                     this.radius = 12;
                     this.hp = 1;
-                    this.color = '#8B4513'; // Brown robe
-                    this.turbanColor = '#FFD700'; // Gold turban
-                } else if (type === 'warrior') { // Medium, agile
+                    this.color = '#8B4513';
+                    this.turbanColor = '#FFD700';
+                } else if (type === 'warrior') { // Medium, agile, shoots
                     this.radius = 15;
                     this.speed *= 1.5;
                     this.hp = 2;
-                    this.color = '#A0522D'; // Sienna robe
-                    this.turbanColor = '#228B22'; // Green turban
-                } else if (type === 'commander') { // Large, slow
+                    this.color = '#A0522D';
+                    this.turbanColor = '#228B22';
+                    this.shootCooldown = Math.random() * 2000 + 1000; // Shoots every 1-3s
+                } else if (type === 'commander') { // Large, slow, spawns minions
                     this.radius = 20;
                     this.speed *= 0.7;
                     this.hp = 4;
-                    this.color = '#2F4F4F'; // Dark slate robe
-                    this.turbanColor = '#800080'; // Purple turban
+                    this.color = '#2F4F4F';
+                    this.turbanColor = '#800080';
+                    this.spawnCooldown = 5000; // Spawns every 5s
                 }
                 this.knockback = { x: 0, y: 0 };
             }
@@ -201,274 +237,33 @@
                 const dy = player.y - this.y;
                 const dist = Math.sqrt(dx * dx + dy * dy);
                 this.angle = Math.atan2(dy, dx);
-                this.x += (dx / dist) * this.speed + this.knockback.x;
-                this.y += (dy / dist) * this.speed + this.knockback.y;
+
+                // Commander stops at a distance
+                let effectiveSpeed = this.speed;
+                if (this.type === 'commander' && dist > 100) effectiveSpeed = 0;
+
+                this.x += (dx / dist) * effectiveSpeed + this.knockback.x;
+                this.y += (dy / dist) * effectiveSpeed + this.knockback.y;
                 this.knockback.x *= 0.9;
                 this.knockback.y *= 0.9;
-            }
-            draw() {
-                ctx.save();
-                ctx.translate(this.x, this.y);
-                ctx.rotate(this.angle);
 
-                // Body (robe with gradient)
-                const bodyGradient = ctx.createRadialGradient(0, 0, 5, 0, 0, this.radius);
-                bodyGradient.addColorStop(0, this.color);
-                bodyGradient.addColorStop(1, '#333');
-                ctx.beginPath();
-                ctx.arc(0, 0, this.radius, 0, Math.PI * 2);
-                ctx.fillStyle = bodyGradient;
-                ctx.fill();
-                ctx.strokeStyle = '#222';
-                ctx.lineWidth = 1;
-                ctx.stroke();
+                // Warrior shooting
+                if (this.type === 'warrior' && Date.now() - (this.lastShot || 0) > this.shootCooldown) {
+                    this.shoot();
+                    this.lastShot = Date.now();
+                }
 
-                // Turban
-                ctx.beginPath();
-                ctx.arc(0, -this.radius * 0.6, this.radius * 0.7, 0, Math.PI * 2);
-                ctx.fillStyle = this.turbanColor;
-                ctx.fill();
-
-                // Weapon (simple AK-47 style)
-                ctx.fillStyle = '#444';
-                ctx.fillRect(this.radius * 0.5, -2, this.radius, 3);
-
-                // HP bar
-                ctx.fillStyle = 'red';
-                ctx.fillRect(-this.radius, -this.radius - 5, this.radius * 2 * (this.hp / (this.type === 'commander' ? 4 : this.type === 'warrior' ? 2 : 1)), 3);
-
-                ctx.restore();
-            }
-            die() {
-                for (let i = 0; i < 10; i++) {
-                    particles.push(new Particle(this.x, this.y));
+                // Commander spawning
+                if (this.type === 'commander' && Date.now() - (this.lastSpawn || 0) > this.spawnCooldown) {
+                    this.spawnMinion();
+                    this.lastSpawn = Date.now();
                 }
             }
-            hit(bullet) {
-                this.hp -= Math.ceil(bullet.damage / 10);
-                const knockbackForce = player.weapon.name === 'shotgun' ? 5 : 2;
-                this.knockback.x = -bullet.dx * knockbackForce;
-                this.knockback.y = -bullet.dy * knockbackForce;
+            shoot() {
+                const dx = player.x - this.x;
+                const dy = player.y - this.y;
+                const dist = Math.sqrt(dx * dx + dy * dy);
+                enemyBullets.push(new EnemyBullet(this.x, this.y, dx / dist, dy / dist));
             }
-        }
-
-        // Shooting function
-        function shoot(e) {
-            if (inTransition) return;
-            const now = Date.now();
-            if (now - player.lastShot < player.weapon.rate) return;
-            player.lastShot = now;
-
-            const rect = canvas.getBoundingClientRect();
-            const mouseX = e.clientX - rect.left;
-            const mouseY = e.clientY - rect.top;
-            const dx = mouseX - player.x;
-            const dy = mouseY - player.y;
-            const dist = Math.sqrt(dx * dx + dy * dy);
-            const dirX = dx / dist;
-            const dirY = dy / dist;
-
-            if (player.weapon.name === 'shotgun') {
-                for (let i = 0; i < 5; i++) {
-                    player.bullets.push(new Bullet(player.x, player.y, dirX, dirY, player.weapon.spread));
-                }
-            } else {
-                player.bullets.push(new Bullet(player.x, player.y, dirX, dirY, player.weapon.spread));
-            }
-
-            player.recoilOffset.x = -dirX * player.weapon.recoil;
-            player.recoilOffset.y = -dirY * player.weapon.recoil;
-            setTimeout(() => { player.recoilOffset.x = 0; player.recoilOffset.y = 0; }, 100);
-            muzzleFlashes.push(new MuzzleFlash(player.x + dirX * 20, player.y + dirY * 20, player.angle));
-        }
-
-        // Spawn enemies
-        function spawnEnemy() {
-            if (inTransition) return;
-            let type = 'militant';
-            if (round >= 10) type = Math.random() < 0.2 ? 'commander' : Math.random() < 0.3 ? 'warrior' : 'militant';
-            else if (round >= 5) type = Math.random() < 0.3 ? 'warrior' : 'militant';
-            enemies.push(new Enemy(type));
-            setTimeout(spawnEnemy, spawnRate);
-        }
-        spawnEnemy();
-
-        // Collision detection
-        function checkCollision(a, b) {
-            const dx = a.x - b.x;
-            const dy = a.y - b.y;
-            const dist = Math.sqrt(dx * dx + dy * dy);
-            return dist < a.radius + b.radius;
-        }
-
-        // Upgrade system
-        function buyUpgrade(type) {
-            if (type === 'shotgun' && score >= 100) {
-                player.weapon = { name: 'shotgun', damage: 20, rate: 800, spread: 0.2, recoil: 5, shots: 5 };
-                score -= 100;
-            } else if (type === 'rifle' && score >= 500) {
-                player.weapon = { name: 'rifle', damage: 15, rate: 200, spread: 0.05, recoil: 3, shots: 1 };
-                score -= 500;
-            } else if (type === 'speed' && score >= 300) {
-                player.speed = 7;
-                score -= 300;
-                setTimeout(() => player.speed = 5, 60000);
-            } else if (type === 'health' && score >= 200) {
-                player.hp = Math.min(player.hp + 50, 100);
-                score -= 200;
-            }
-            scoreDisplay.textContent = score;
-            healthDisplay.textContent = player.hp;
-        }
-
-        // Realistic player drawing
-        function drawPlayer() {
-            ctx.save();
-            ctx.translate(player.x + player.recoilOffset.x, player.y + player.recoilOffset.y);
-            ctx.rotate(player.angle);
-
-            const bodyGradient = ctx.createRadialGradient(0, 0, 5, 0, 0, 15);
-            bodyGradient.addColorStop(0, '#888');
-            bodyGradient.addColorStop(1, '#444');
-            ctx.beginPath();
-            ctx.arc(0, 0, 15, 0, Math.PI * 2);
-            ctx.fillStyle = bodyGradient;
-            ctx.fill();
-            ctx.strokeStyle = '#222';
-            ctx.lineWidth = 2;
-            ctx.stroke();
-
-            const helmetGradient = ctx.createLinearGradient(0, -12, 0, -5);
-            helmetGradient.addColorStop(0, '#00FFFF');
-            helmetGradient.addColorStop(1, '#00CCCC');
-            ctx.beginPath();
-            ctx.arc(0, -8, 10, 0, Math.PI * 2);
-            ctx.fillStyle = helmetGradient;
-            ctx.fill();
-            ctx.strokeStyle = '#006666';
-            ctx.stroke();
-            ctx.beginPath();
-            ctx.arc(-3, -10, 3, 0, Math.PI);
-            ctx.fillStyle = 'rgba(255, 255, 255, 0.5)';
-            ctx.fill();
-
-            ctx.fillStyle = '#555';
-            ctx.fillRect(-8, 5, 6, 10);
-            ctx.fillRect(2, 5, 6, 10);
-            ctx.strokeStyle = '#333';
-            ctx.strokeRect(-8, 5, 6, 10);
-            ctx.strokeRect(2, 5, 6, 10);
-
-            ctx.fillStyle = '#666';
-            ctx.fillRect(-12, -2, 8, 4);
-            ctx.fillRect(10, -2, 8, 4);
-
-            ctx.fillStyle = '#333';
-            ctx.fillRect(10, -3, 15, 6);
-            ctx.fillStyle = '#222';
-            ctx.fillRect(15, -1, 10, 2);
-            ctx.strokeStyle = '#111';
-            ctx.lineWidth = 1;
-            ctx.strokeRect(10, -3, 15, 6);
-
-            ctx.fillStyle = '#000';
-            ctx.fillRect(-6, -10, 12, 3);
-
-            ctx.restore();
-        }
-
-        // Game loop
-        function update() {
-            ctx.clearRect(0, 0, canvas.width, canvas.height);
-
-            if (inTransition) {
-                roundTransitionTime += 16;
-                ctx.fillStyle = 'rgba(0, 0, 0, 0.7)';
-                ctx.fillRect(0, 0, canvas.width, canvas.height);
-                ctx.fillStyle = 'white';
-                ctx.font = '30px Arial';
-                ctx.fillText(`Round ${round} Starting in ${Math.ceil((3000 - roundTransitionTime) / 1000)}s`, canvas.width / 2 - 150, canvas.height / 2);
-                drawPlayer();
-                if (roundTransitionTime >= 3000) {
-                    inTransition = false;
-                    roundTransitionTime = 0;
-                    spawnEnemy(); // Restart spawning
-                }
-            } else {
-                // Player movement
-                if (keys['w'] && player.y > player.radius) player.y -= player.speed;
-                if (keys['s'] && player.y < canvas.height - player.radius) player.y += player.speed;
-                if (keys['a'] && player.x > player.radius) player.x -= player.speed;
-                if (keys['d'] && player.x < canvas.width - player.radius) player.x += player.speed;
-
-                // Round progression
-                roundTime += 16;
-                if (roundTime >= 60000) {
-                    round++;
-                    roundTime = 0;
-                    inTransition = true;
-                    enemySpeed *= 1.1;
-                    spawnRate *= 0.9;
-                    roundDisplay.textContent = round;
-                    player.hp = Math.min(player.hp + 10, 100);
-                    healthDisplay.textContent = player.hp;
-                }
-            }
-
-            drawPlayer();
-
-            player.bullets.forEach((bullet, bIndex) => {
-                bullet.update();
-                bullet.draw();
-                if (bullet.x < 0 || bullet.x > canvas.width || bullet.y < 0 || bullet.y > canvas.height) {
-                    player.bullets.splice(bIndex, 1);
-                }
-            });
-
-            enemies.forEach((enemy, eIndex) => {
-                enemy.update();
-                enemy.draw();
-
-                player.bullets.forEach((bullet, bIndex) => {
-                    if (checkCollision(bullet, enemy)) {
-                        enemy.hit(bullet);
-                        player.bullets.splice(bIndex, 1);
-                        if (enemy.hp <= 0) {
-                            enemy.die();
-                            enemies.splice(eIndex, 1);
-                            score += enemy.type === 'commander' ? 50 : enemy.type === 'warrior' ? 30 : 20;
-                            scoreDisplay.textContent = score;
-                        }
-                    }
-                });
-
-                if (checkCollision(player, enemy)) {
-                    player.hp -= 10;
-                    enemy.die();
-                    enemies.splice(eIndex, 1);
-                    healthDisplay.textContent = player.hp;
-                    if (player.hp <= 0) {
-                        alert(`Game Over! Score: ${score}`);
-                        document.location.reload();
-                    }
-                }
-            });
-
-            particles.forEach((particle, pIndex) => {
-                particle.update();
-                particle.draw();
-                if (particle.life <= 0) particles.splice(pIndex, 1);
-            });
-
-            muzzleFlashes.forEach((flash, fIndex) => {
-                flash.update();
-                flash.draw();
-                if (flash.life <= 0) muzzleFlashes.splice(fIndex, 1);
-            });
-
-            requestAnimationFrame(update);
-        }
-        update();
-    </script>
-</body>
-</html>
+            spawnMinion() {
+                enemies.push(new Enemy('militant'));
