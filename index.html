@@ -401,14 +401,17 @@
         function toggleTeammate() {
             teammate.active = !teammate.active;
             if (teammate.active) {
-                // Reset teammate state when activated
+                // Reset teammate state
                 teammate.x = player.x - 50;
                 teammate.y = player.y - 50;
                 teammate.hp = 50;
                 teammate.bullets = [];
-                teammate.lastShot = 0;
+                teammate.lastShot = Date.now(); // Prevent immediate shooting
+                console.log('Teammate activated:', teammate);
+            } else {
+                teammate.bullets = []; // Clear bullets when toggled off
+                console.log('Teammate deactivated');
             }
-            console.log('Teammate toggled:', teammate.active); // Debug log
         }
 
         // Spawn enemies
@@ -474,7 +477,7 @@
                 player.hp = Math.min(player.hp + 50, 100);
                 score -= 200;
             } else if (type === 'flamethrower' && score >= 600) {
-                player.weapon = { name: 'flamethrower', damage: 5, rate: 50, spread: 0.2, recoil: 1, shots: 3, range: 200 }; // Doubled from 100 to 200
+                player.weapon = { name: 'flamethrower', damage: 5, rate: 50, spread: 0.2, recoil: 1, shots: 3, range: 200 };
                 score -= 600;
             }
             scoreDisplay.textContent = score;
@@ -614,7 +617,7 @@
                 }
             }
 
-            // Teammate logic
+            // Teammate logic (simplified)
             if (teammate.active) {
                 let dx = player.x - teammate.x;
                 let dy = player.y - teammate.y;
@@ -638,7 +641,7 @@
                         teammate.y = newY;
                     }
                 }
-                // Teammate shooting only when player shoots, with cooldown
+                // Teammate shoots only when player shoots, with independent cooldown
                 if (isShooting) {
                     shoot(teammate);
                 }
@@ -685,7 +688,7 @@
                 }
             }
 
-            // Teammate bullets
+            // Teammate bullets (processed separately)
             if (teammate.active) {
                 for (let bIndex = teammate.bullets.length - 1; bIndex >= 0; bIndex--) {
                     const bullet = teammate.bullets[bIndex];
@@ -721,99 +724,4 @@
                     }
                 }
             }
-
-            // Enemies
-            enemies.forEach((enemy, eIndex) => {
-                enemy.update();
-                enemy.draw();
-
-                if (checkCollision(player, enemy)) {
-                    player.hp -= 10;
-                    enemy.die();
-                    enemies.splice(eIndex, 1);
-                    healthDisplay.textContent = player.hp;
-                    if (player.hp <= 0) {
-                        alert(`Game Over! Score: ${score}`);
-                        document.location.reload();
-                    }
-                } else if (teammate.active && checkCollision(teammate, enemy)) {
-                    teammate.hp -= 10;
-                    enemy.die();
-                    enemies.splice(eIndex, 1);
-                    if (teammate.hp <= 0) teammate.active = false;
-                }
-            });
-
-            // Enemy bullets
-            for (let bIndex = enemyBullets.length - 1; bIndex >= 0; bIndex--) {
-                const bullet = enemyBullets[bIndex];
-                bullet.update();
-                bullet.draw();
-                let shouldRemove = bullet.x < 0 || bullet.x > canvas.width || bullet.y < 0 || bullet.y > canvas.height;
-                walls.forEach(wall => {
-                    if (checkBulletWallCollision(bullet, wall)) shouldRemove = true;
-                });
-                bushes.forEach(bush => {
-                    if (checkBushCollision(bullet, bush)) shouldRemove = true;
-                });
-
-                if (shouldRemove) {
-                    enemyBullets.splice(bIndex, 1);
-                } else if (checkCollision(bullet, player)) {
-                    player.hp -= 5;
-                    enemyBullets.splice(bIndex, 1);
-                    healthDisplay.textContent = player.hp;
-                    if (player.hp <= 0) {
-                        alert(`Game Over! Score: ${score}`);
-                        document.location.reload();
-                    }
-                } else if (teammate.active && checkCollision(bullet, teammate)) {
-                    teammate.hp -= 5;
-                    enemyBullets.splice(bIndex, 1);
-                    if (teammate.hp <= 0) teammate.active = false;
-                }
-            }
-
-            // Particles
-            particles.forEach((particle, pIndex) => {
-                particle.update();
-                particle.draw();
-                if (particle.life <= 0) particles.splice(pIndex, 1);
-            });
-
-            // Muzzle flashes
-            muzzleFlashes.forEach((flash, fIndex) => {
-                flash.update();
-                flash.draw();
-                if (flash.life <= 0) muzzleFlashes.splice(fIndex, 1);
-            });
-
-            // Power-ups
-            powerUps.forEach((powerUp, pIndex) => {
-                powerUp.life -= 16;
-                ctx.beginPath();
-                ctx.arc(powerUp.x, powerUp.y, powerUp.radius, 0, Math.PI * 2);
-                ctx.fillStyle = powerUp.type === 'health' ? 'green' : powerUp.type === 'speed' ? 'blue' : 'purple';
-                ctx.fill();
-                if (checkCollision(player, powerUp)) {
-                    if (powerUp.type === 'health') player.hp = Math.min(player.hp + 20, 100);
-                    else if (powerUp.type === 'speed') {
-                        player.speed = 8;
-                        setTimeout(() => player.speed = 5, 10000);
-                    } else if (powerUp.type === 'damage') {
-                        const oldDamage = player.weapon.damage;
-                        player.weapon.damage *= 2;
-                        setTimeout(() => player.weapon.damage = oldDamage, 10000);
-                    }
-                    powerUps.splice(pIndex, 1);
-                    healthDisplay.textContent = player.hp;
-                }
-                if (powerUp.life <= 0) powerUps.splice(pIndex, 1);
-            });
-
-            requestAnimationFrame(update);
-        }
-        update();
-    </script>
-</body>
-</html>
+...
