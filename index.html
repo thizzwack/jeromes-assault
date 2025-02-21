@@ -113,7 +113,7 @@
             player.angle = Math.atan2(mouseY - player.y, mouseX - player.x);
         });
 
-        // Bullet class (Updated for explosives and flamethrower)
+        // Bullet class (Fixed explosion logic)
         class Bullet {
             constructor(x, y, dx, dy, spread) {
                 this.x = x;
@@ -127,6 +127,7 @@
                 this.explosionRadius = player.weapon.explosionRadius;
                 this.distanceTraveled = 0;
                 this.isFlame = player.weapon.name === 'flamethrower';
+                this.hasExploded = false; // NEW: Prevent multiple explosions
             }
             update() {
                 this.x += this.dx * this.speed;
@@ -143,21 +144,21 @@
                 ctx.fill();
             }
             explode() {
-                if (this.explosionRadius > 0) {
-                    for (let i = 0; i < 20; i++) {
-                        particles.push(new Particle(this.x, this.y, Math.random() < 0.5 ? 'orange' : 'yellow'));
-                    }
-                    particles.push({ x: this.x, y: this.y, radius: 0, maxRadius: this.explosionRadius, life: 20, color: 'rgba(255, 165, 0, 0.5)' });
-                    enemies.forEach(enemy => {
-                        const dist = Math.sqrt((enemy.x - this.x) ** 2 + (enemy.y - this.y) ** 2);
-                        if (dist < this.explosionRadius) {
-                            enemy.hp -= this.damage / 10;
-                            enemy.knockback.x += (enemy.x - this.x) / dist * 5;
-                            enemy.knockback.y += (enemy.y - this.y) / dist * 5;
-                            if (enemy.hp <= 0) enemy.die();
-                        }
-                    });
+                if (this.hasExploded || this.explosionRadius === 0) return; // Prevent multiple calls
+                this.hasExploded = true;
+                for (let i = 0; i < 20; i++) {
+                    particles.push(new Particle(this.x, this.y, Math.random() < 0.5 ? 'orange' : 'yellow'));
                 }
+                particles.push({ x: this.x, y: this.y, radius: 0, maxRadius: this.explosionRadius, life: 20, color: 'rgba(255, 165, 0, 0.5)' });
+                enemies.forEach(enemy => {
+                    const dist = Math.sqrt((enemy.x - this.x) ** 2 + (enemy.y - this.y) ** 2);
+                    if (dist < this.explosionRadius) {
+                        enemy.hp -= this.damage / 10;
+                        enemy.knockback.x += (enemy.x - this.x) / dist * 5;
+                        enemy.knockback.y += (enemy.y - this.y) / dist * 5;
+                        if (enemy.hp <= 0) enemy.die();
+                    }
+                });
             }
         }
 
@@ -183,7 +184,7 @@
             }
         }
 
-        // Particle class (Updated for shockwaves)
+        // Particle class
         class Particle {
             constructor(x, y, color = null) {
                 this.x = x;
@@ -291,7 +292,6 @@
                 let newX = this.x + (dx / dist) * effectiveSpeed + this.knockback.x;
                 let newY = this.y + (dy / dist) * effectiveSpeed + this.knockback.y;
 
-                // Check wall collision
                 let collided = false;
                 walls.forEach(wall => {
                     if (this.checkWallCollision(wall, newX, newY)) {
@@ -368,6 +368,7 @@
                 const knockbackForce = player.weapon.name === 'shotgun' ? 5 : player.weapon.explosionRadius > 0 ? 8 : 2;
                 this.knockback.x = -bullet.dx * knockbackForce;
                 this.knockback.y = -bullet.dy * knockbackForce;
+                if (this.hp <= 0) this.die(); // Ensure die() is called here
             }
             checkWallCollision(wall, x = this.x, y = this.y) {
                 return (
@@ -379,7 +380,7 @@
             }
         }
 
-        // Shooting function (Updated for new weapons)
+        // Shooting function
         function shoot(e) {
             const now = Date.now();
             if (now - player.lastShot < player.weapon.rate) return;
@@ -459,7 +460,7 @@
             return dist < obj.radius + dune.radius;
         }
 
-        // Upgrade system (Updated with new weapons)
+        // Upgrade system
         function buyUpgrade(type) {
             if (type === 'shotgun' && score >= 100) {
                 player.weapon = { name: 'shotgun', damage: 20, rate: 800, spread: 0.2, recoil: 5, shots: 5, range: Infinity, explosionRadius: 0 };
@@ -644,43 +645,49 @@
 
             drawPlayer();
 
-            // Player bullets (Active during transition)
-            player.bullets.forEach((bullet, bIndex) => {
+            // Player bullets
+            for (let bIndex = player.bullets.length - 1; bIndex >= 0; bIndex--) {
+                const bullet = player.bullets[bIndex];
                 bullet.update();
                 bullet.draw();
 
                 let shouldRemove = bullet.x < 0 || bullet.x > canvas.width || bullet.y < 0 || bullet.y > canvas.height || bullet.distanceTraveled > bullet.range;
+
+                // Check wall and dune collisions
                 walls.forEach(wall => {
                     if (checkBulletWallCollision(bullet, wall)) {
                         shouldRemove = true;
-                        if (bullet.explosionRadius > 0) bullet.explode();
+                        if (bullet.explosionRadius > 0 && !bullet.hasExploded) bullet.explode();
                     }
                 });
                 dunes.forEach(dune => {
                     if (checkDuneCollision(bullet, dune)) {
                         shouldRemove = true;
-                        if (bullet.explosionRadius > 0) bullet.explode();
+                        if (bullet.explosionRadius > 0 && !bullet.hasExploded) bullet.explode();
                     }
                 });
 
                 if (shouldRemove) {
                     player.bullets.splice(bIndex, 1);
-                } else {
-                    enemies.forEach((enemy, eIndex) => {
-                        if (checkCollision(bullet, enemy)) {
-                            enemy.hit(bullet);
-                            if (bullet.explosionRadius > 0) bullet.explode();
-                            player.bullets.splice(bIndex, 1);
-                            if (enemy.hp <= 0) {
-                                enemy.die();
-                                enemies.splice(eIndex, 1);
-                                score += enemy.type === 'commander' ? 50 : enemy.type === 'warrior' ? 30 : 20;
-                                scoreDisplay.textContent = score;
-                            }
-                        }
-                    });
+                    continue;
                 }
-            });
+
+                // Check enemy collisions
+                for (let eIndex = enemies.length - 1; eIndex >= 0; eIndex--) {
+                    const enemy = enemies[eIndex];
+                    if (checkCollision(bullet, enemy)) {
+                        enemy.hit(bullet);
+                        if (bullet.explosionRadius > 0 && !bullet.hasExploded) bullet.explode();
+                        player.bullets.splice(bIndex, 1);
+                        if (enemy.hp <= 0) {
+                            enemies.splice(eIndex, 1);
+                            score += enemy.type === 'commander' ? 50 : enemy.type === 'warrior' ? 30 : 20;
+                            scoreDisplay.textContent = score;
+                        }
+                        break; // Exit enemy loop after hit
+                    }
+                }
+            }
 
             // Enemies
             enemies.forEach((enemy, eIndex) => {
@@ -700,7 +707,8 @@
             });
 
             // Enemy bullets
-            enemyBullets.forEach((bullet, bIndex) => {
+            for (let bIndex = enemyBullets.length - 1; bIndex >= 0; bIndex--) {
+                const bullet = enemyBullets[bIndex];
                 bullet.update();
                 bullet.draw();
                 let shouldRemove = bullet.x < 0 || bullet.x > canvas.width || bullet.y < 0 || bullet.y > canvas.height;
@@ -722,7 +730,7 @@
                         document.location.reload();
                     }
                 }
-            });
+            }
 
             // Particles
             particles.forEach((particle, pIndex) => {
