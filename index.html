@@ -2,18 +2,23 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0"> <!-- For mobile scaling -->
     <title>Jerome’s Assault</title>
     <style>
         canvas {
             border: 1px solid black;
             display: block;
             margin: 0 auto;
+            touch-action: none; /* Prevent default touch behaviors */
         }
         body {
             text-align: center;
             background: #111;
             color: white;
             font-family: Arial, sans-serif;
+            margin: 0;
+            padding: 0;
+            overflow: hidden; /* Prevent scrolling on mobile */
         }
         #upgrades {
             margin: 10px;
@@ -54,7 +59,7 @@
         const player = {
             x: canvas.width / 2,
             y: canvas.height / 2,
-            radius: 20,  // Used for collision
+            radius: 20,
             speed: 5,
             hp: 100,
             bullets: [],
@@ -90,6 +95,10 @@
         let backgroundOffset = 0;
         let isShooting = false;
 
+        // Touch controls
+        let joystick = { active: false, x: 0, y: 0, dx: 0, dy: 0 }; // Virtual joystick for movement
+        let shootTouch = { active: false, x: 0, y: 0 }; // Touch for aiming/shooting
+
         // Initialize stars
         for (let i = 0; i < 50; i++) {
             stars.push({
@@ -100,7 +109,7 @@
             });
         }
 
-        // Input handling
+        // Input handling (Keyboard/Mouse)
         const keys = {};
         window.addEventListener('keydown', (e) => keys[e.key] = true);
         window.addEventListener('keyup', (e) => keys[e.key] = false);
@@ -111,6 +120,71 @@
             const mouseX = e.clientX - rect.left;
             const mouseY = e.clientY - rect.top;
             player.angle = Math.atan2(mouseY - player.y, mouseX - player.x);
+        });
+
+        // Touch event handlers
+        canvas.addEventListener('touchstart', (e) => {
+            e.preventDefault();
+            const touches = e.changedTouches;
+            for (let i = 0; i < touches.length; i++) {
+                const rect = canvas.getBoundingClientRect();
+                const touchX = touches[i].clientX - rect.left;
+                const touchY = touches[i].clientY - rect.top;
+
+                if (touchX < canvas.width / 2) { // Left half for movement
+                    joystick.active = true;
+                    joystick.x = touchX;
+                    joystick.y = touchY;
+                    joystick.dx = 0;
+                    joystick.dy = 0;
+                } else { // Right half for shooting
+                    shootTouch.active = true;
+                    shootTouch.x = touchX;
+                    shootTouch.y = touchY;
+                    player.angle = Math.atan2(touchY - player.y, touchX - player.x);
+                    isShooting = true;
+                }
+            }
+        });
+
+        canvas.addEventListener('touchmove', (e) => {
+            e.preventDefault();
+            const touches = e.touches;
+            for (let i = 0; i < touches.length; i++) {
+                const rect = canvas.getBoundingClientRect();
+                const touchX = touches[i].clientX - rect.left;
+                const touchY = touches[i].clientY - rect.top;
+
+                if (joystick.active && touchX < canvas.width / 2) {
+                    const dx = touchX - joystick.x;
+                    const dy = touchY - joystick.y;
+                    const dist = Math.sqrt(dx * dx + dy * dy);
+                    const maxDist = 50; // Joystick range
+                    joystick.dx = Math.min(maxDist, Math.max(-maxDist, dx)) / maxDist;
+                    joystick.dy = Math.min(maxDist, Math.max(-maxDist, dy)) / maxDist;
+                } else if (shootTouch.active && touchX >= canvas.width / 2) {
+                    shootTouch.x = touchX;
+                    shootTouch.y = touchY;
+                    player.angle = Math.atan2(touchY - player.y, touchX - player.x);
+                }
+            }
+        });
+
+        canvas.addEventListener('touchend', (e) => {
+            e.preventDefault();
+            const touches = e.changedTouches;
+            for (let i = 0; i < touches.length; i++) {
+                const rect = canvas.getBoundingClientRect();
+                const touchX = touches[i].clientX - rect.left;
+                if (touchX < canvas.width / 2) {
+                    joystick.active = false;
+                    joystick.dx = 0;
+                    joystick.dy = 0;
+                } else {
+                    shootTouch.active = false;
+                    isShooting = false;
+                }
+            }
         });
 
         // Bullet class
@@ -457,9 +531,9 @@
 
             // Torso (camouflage)
             const torsoGradient = ctx.createLinearGradient(-10, -15, 10, 15);
-            torsoGradient.addColorStop(0, '#4B5320'); // Army green
-            torsoGradient.addColorStop(0.5, '#6B8E23'); // Olive drab
-            torsoGradient.addColorStop(1, '#556B2F'); // Dark olive
+            torsoGradient.addColorStop(0, '#4B5320');
+            torsoGradient.addColorStop(0.5, '#6B8E23');
+            torsoGradient.addColorStop(1, '#556B2F');
             ctx.fillStyle = torsoGradient;
             ctx.fillRect(-10, -15, 20, 30);
             ctx.strokeStyle = '#333';
@@ -469,7 +543,7 @@
             // Head (skin tone with headband)
             ctx.beginPath();
             ctx.arc(0, -18, 8, 0, Math.PI * 2);
-            ctx.fillStyle = '#FFDAB9'; // Peach skin tone
+            ctx.fillStyle = '#FFDAB9';
             ctx.fill();
             ctx.strokeStyle = '#8B4513';
             ctx.stroke();
@@ -480,32 +554,32 @@
 
             // Arms (muscular, sleeveless)
             ctx.fillStyle = '#FFDAB9';
-            ctx.fillRect(-14, -10, 4, 20); // Left arm
-            ctx.fillRect(10, -10, 4, 20);  // Right arm
+            ctx.fillRect(-14, -10, 4, 20);
+            ctx.fillRect(10, -10, 4, 20);
             ctx.strokeStyle = '#8B4513';
             ctx.strokeRect(-14, -10, 4, 20);
             ctx.strokeRect(10, -10, 4, 20);
 
             // Legs (camouflage pants)
             ctx.fillStyle = '#4B5320';
-            ctx.fillRect(-8, 5, 6, 15);  // Left leg
-            ctx.fillRect(2, 5, 6, 15);   // Right leg
+            ctx.fillRect(-8, 5, 6, 15);
+            ctx.fillRect(2, 5, 6, 15);
             ctx.strokeStyle = '#333';
             ctx.strokeRect(-8, 5, 6, 15);
             ctx.strokeRect(2, 5, 6, 15);
 
-            // Weapon (M60-style machine gun or rifle)
+            // Weapon (M60-style machine gun)
             ctx.fillStyle = '#333';
-            ctx.fillRect(10, -5, 20, 4); // Gun barrel
+            ctx.fillRect(10, -5, 20, 4);
             ctx.fillStyle = '#555';
-            ctx.fillRect(10, -3, 5, 2);  // Gun handle
+            ctx.fillRect(10, -3, 5, 2);
 
             // Boots (black)
             ctx.fillStyle = '#000';
-            ctx.fillRect(-8, 18, 6, 4);  // Left boot
-            ctx.fillRect(2, 18, 6, 4);   // Right boot
+            ctx.fillRect(-8, 18, 6, 4);
+            ctx.fillRect(2, 18, 6, 4);
 
-            // Detail: Bandana tail
+            // Bandana tail
             ctx.fillStyle = '#FF0000';
             ctx.beginPath();
             ctx.moveTo(-8, -18);
@@ -514,6 +588,18 @@
             ctx.fill();
 
             ctx.restore();
+
+            // Draw joystick (for mobile debugging)
+            if (joystick.active) {
+                ctx.beginPath();
+                ctx.arc(joystick.x, joystick.y, 50, 0, Math.PI * 2);
+                ctx.fillStyle = 'rgba(255, 255, 255, 0.2)';
+                ctx.fill();
+                ctx.beginPath();
+                ctx.arc(joystick.x + joystick.dx * 50, joystick.y + joystick.dy * 50, 20, 0, Math.PI * 2);
+                ctx.fillStyle = 'rgba(255, 255, 255, 0.5)';
+                ctx.fill();
+            }
         }
 
         // Game loop
@@ -581,13 +667,21 @@
                     spawnEnemy();
                 }
             } else {
-                // Player movement
+                // Player movement (Keyboard or Touch)
                 let newX = player.x;
                 let newY = player.y;
-                if (keys['w'] && player.y > player.radius) newY -= player.speed;
-                if (keys['s'] && player.y < canvas.height - player.radius) newY += player.speed;
-                if (keys['a'] && player.x > player.radius) newX -= player.speed;
-                if (keys['d'] && player.x < canvas.width - player.radius) newX += player.speed;
+                if (keys['w']) newY -= player.speed;
+                if (keys['s']) newY += player.speed;
+                if (keys['a']) newX -= player.speed;
+                if (keys['d']) newX += player.speed;
+                if (joystick.active) {
+                    newX += joystick.dx * player.speed;
+                    newY += joystick.dy * player.speed;
+                }
+
+                // Boundary checks
+                newX = Math.max(player.radius, Math.min(canvas.width - player.radius, newX));
+                newY = Math.max(player.radius, Math.min(canvas.height - player.radius, newY));
 
                 let collided = false;
                 walls.forEach(wall => {
