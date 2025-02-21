@@ -39,9 +39,8 @@
         <button onclick="buyUpgrade('rifle')">Rifle (500)</button>
         <button onclick="buyUpgrade('speed')">Speed Boost (300)</button>
         <button onclick="buyUpgrade('health')">Health Pack (200)</button>
-        <button onclick="buyUpgrade('grenade')">Grenade Launcher (300)</button>
-        <button onclick="buyUpgrade('rocket')">Rocket Launcher (700)</button>
         <button onclick="buyUpgrade('flamethrower')">Flamethrower (600)</button>
+        <button onclick="toggleTeammate()">Toggle Teammate</button>
     </div>
     <canvas id="gameCanvas" width="800" height="600"></canvas>
     <script>
@@ -60,10 +59,24 @@
             speed: 5,
             hp: 100,
             bullets: [],
-            weapon: { name: 'pistol', damage: 10, rate: 500, spread: 0, recoil: 2, shots: 1, range: Infinity, explosionRadius: 0 },
+            weapon: { name: 'pistol', damage: 10, rate: 500, spread: 0, recoil: 2, shots: 1, range: Infinity },
             lastShot: 0,
             angle: 0,
             recoilOffset: { x: 0, y: 0 }
+        };
+
+        // Teammate object (optional AI)
+        let teammate = {
+            x: canvas.width / 2 - 50,
+            y: canvas.height / 2 - 50,
+            radius: 15,
+            speed: 4,
+            hp: 50,
+            bullets: [],
+            weapon: { name: 'pistol', damage: 8, rate: 600, spread: 0.1, recoil: 1, shots: 1, range: Infinity },
+            lastShot: 0,
+            angle: 0,
+            active: false  // Starts inactive, toggled via button
         };
 
         // Game state
@@ -74,16 +87,15 @@
         let powerUps = [];
         let stars = [];
         let walls = [
-            { x: 200, y: 150, width: 100, height: 20 },  // Representing fallen logs
+            { x: 200, y: 150, width: 100, height: 20 },
             { x: 500, y: 400, width: 20, height: 100 },
             { x: 300, y: 500, width: 150, height: 20 }
         ];
-        let bushes = [  // Replacing dunes with bushes
+        let bushes = [
             { x: 150, y: 300, radius: 40 },
             { x: 600, y: 200, radius: 50 }
         ];
-        let bulletsToExplode = [];
-        let score = 1000;  // Start with 1000 points
+        let score = 1000;
         let round = 1;
         let roundTime = 0;
         let roundTransitionTime = 0;
@@ -91,6 +103,7 @@
         let enemySpeed = 2;
         let spawnRate = 5000;
         let backgroundOffset = 0;
+        let isShooting = false;  // NEW: Track mouse hold
 
         // Initialize stars
         for (let i = 0; i < 50; i++) {
@@ -106,29 +119,32 @@
         const keys = {};
         window.addEventListener('keydown', (e) => keys[e.key] = true);
         window.addEventListener('keyup', (e) => keys[e.key] = false);
-        canvas.addEventListener('click', shoot);
+        canvas.addEventListener('mousedown', () => isShooting = true);
+        canvas.addEventListener('mouseup', () => isShooting = false);
         canvas.addEventListener('mousemove', (e) => {
             const rect = canvas.getBoundingClientRect();
             const mouseX = e.clientX - rect.left;
             const mouseY = e.clientY - rect.top;
             player.angle = Math.atan2(mouseY - player.y, mouseX - player.x);
+            if (teammate.active) {
+                teammate.angle = Math.atan2(mouseY - teammate.y, mouseX - teammate.x);
+            }
         });
 
-        // Bullet class
+        // Bullet class (No explosive properties)
         class Bullet {
-            constructor(x, y, dx, dy, spread) {
+            constructor(x, y, dx, dy, spread, owner) {
                 this.x = x;
                 this.y = y;
                 this.dx = dx + (Math.random() - 0.5) * spread;
                 this.dy = dy + (Math.random() - 0.5) * spread;
-                this.radius = player.weapon.name === 'shotgun' ? 3 : player.weapon.name === 'grenade' ? 8 : player.weapon.name === 'rocket' ? 10 : player.weapon.name === 'flamethrower' ? 5 : 5;
-                this.speed = player.weapon.name === 'rifle' ? 15 : player.weapon.name === 'rocket' ? 12 : player.weapon.name === 'flamethrower' ? 8 : 10;
-                this.damage = player.weapon.damage;
-                this.range = player.weapon.range;
-                this.explosionRadius = player.weapon.explosionRadius;
+                this.radius = owner.weapon.name === 'shotgun' ? 3 : owner.weapon.name === 'flamethrower' ? 5 : 5;
+                this.speed = owner.weapon.name === 'rifle' ? 15 : owner.weapon.name === 'flamethrower' ? 8 : 10;
+                this.damage = owner.weapon.damage;
+                this.range = owner.weapon.range;
                 this.distanceTraveled = 0;
-                this.isFlame = player.weapon.name === 'flamethrower';
-                this.hasExploded = false;
+                this.isFlame = owner.weapon.name === 'flamethrower';
+                this.owner = owner;  // Track who fired the bullet
             }
             update() {
                 this.x += this.dx * this.speed;
@@ -141,16 +157,8 @@
             draw() {
                 ctx.beginPath();
                 ctx.arc(this.x, this.y, this.radius, 0, Math.PI * 2);
-                ctx.fillStyle = this.isFlame ? 'orange' : player.weapon.name === 'rifle' ? '#FFA500' : player.weapon.name === 'grenade' ? '#666' : player.weapon.name === 'rocket' ? '#FF4500' : 'yellow';
+                ctx.fillStyle = this.isFlame ? 'orange' : this.owner === teammate ? '#00FF00' : this.owner.weapon.name === 'rifle' ? '#FFA500' : 'yellow';
                 ctx.fill();
-            }
-            explode() {
-                if (this.hasExploded || this.explosionRadius === 0) return;
-                this.hasExploded = true;
-                for (let i = 0; i < 20; i++) {
-                    particles.push(new Particle(this.x, this.y, Math.random() < 0.5 ? 'orange' : 'yellow'));
-                }
-                particles.push({ x: this.x, y: this.y, radius: 0, maxRadius: this.explosionRadius, life: 20, color: 'rgba(255, 165, 0, 0.5)' });
             }
         }
 
@@ -184,24 +192,14 @@
                 this.radius = Math.random() * 3 + 1;
                 this.dx = (Math.random() - 0.5) * 4;
                 this.dy = (Math.random() - 0.5) * 4;
-                this.life = color === 'rgba(255, 165, 0, 0.5)' ? 20 : 30;
+                this.life = 30;
                 this.color = color || (Math.random() < 0.5 ? '#8B0000' : '#FF0000');
-                this.isShockwave = color === 'rgba(255, 165, 0, 0.5)';
-                if (this.isShockwave) {
-                    this.radius = 0;
-                    this.maxRadius = 50; // Default, overridden by explosion
-                }
             }
             update() {
-                if (this.isShockwave) {
-                    this.radius += this.maxRadius / this.life;
-                    this.life--;
-                } else {
-                    this.x += this.dx;
-                    this.y += this.dy;
-                    this.life--;
-                    this.radius *= 0.95;
-                }
+                this.x += this.dx;
+                this.y += this.dy;
+                this.life--;
+                this.radius *= 0.95;
             }
             draw() {
                 ctx.beginPath();
@@ -253,21 +251,21 @@
                 if (type === 'militant') {
                     this.radius = 12;
                     this.hp = 1;
-                    this.color = '#556B2F'; // Dark olive green
-                    this.turbanColor = '#8B4513'; // Brown
+                    this.color = '#556B2F';
+                    this.turbanColor = '#8B4513';
                 } else if (type === 'warrior') {
                     this.radius = 15;
                     this.speed *= 1.5;
                     this.hp = 2;
-                    this.color = '#6B8E23'; // Olive drab
-                    this.turbanColor = '#228B22'; // Forest green
+                    this.color = '#6B8E23';
+                    this.turbanColor = '#228B22';
                     this.shootCooldown = Math.random() * 2000 + 1000;
                 } else if (type === 'commander') {
                     this.radius = 20;
                     this.speed *= 0.7;
                     this.hp = 4;
-                    this.color = '#2F4F4F'; // Dark slate gray
-                    this.turbanColor = '#483D8B'; // Dark slate blue
+                    this.color = '#2F4F4F';
+                    this.turbanColor = '#483D8B';
                     this.spawnCooldown = 5000;
                 }
                 this.knockback = { x: 0, y: 0 };
@@ -357,7 +355,7 @@
             }
             hit(bullet) {
                 this.hp -= Math.ceil(bullet.damage / 10);
-                const knockbackForce = player.weapon.name === 'shotgun' ? 5 : player.weapon.explosionRadius > 0 ? 8 : 2;
+                const knockbackForce = bullet.owner.weapon.name === 'shotgun' ? 5 : 2;
                 this.knockback.x = -bullet.dx * knockbackForce;
                 this.knockback.y = -bullet.dy * knockbackForce;
                 if (this.hp <= 0) this.die();
@@ -373,36 +371,36 @@
         }
 
         // Shooting function
-        function shoot(e) {
+        function shoot() {
             const now = Date.now();
-            if (now - player.lastShot < player.weapon.rate) return;
-            player.lastShot = now;
+            const shooter = arguments[0] || player;  // Default to player, allow teammate to call
+            if (now - shooter.lastShot < shooter.weapon.rate) return;
+            shooter.lastShot = now;
 
-            const rect = canvas.getBoundingClientRect();
-            const mouseX = e.clientX - rect.left;
-            const mouseY = e.clientY - rect.top;
-            const dx = mouseX - player.x;
-            const dy = mouseY - player.y;
-            const dist = Math.sqrt(dx * dx + dy * dy);
-            const dirX = dx / dist;
-            const dirY = dy / dist;
+            const dx = Math.cos(shooter.angle);
+            const dy = Math.sin(shooter.angle);
 
-            if (player.weapon.name === 'shotgun') {
+            if (shooter.weapon.name === 'shotgun') {
                 for (let i = 0; i < 5; i++) {
-                    player.bullets.push(new Bullet(player.x, player.y, dirX, dirY, player.weapon.spread));
+                    shooter.bullets.push(new Bullet(shooter.x, shooter.y, dx, dy, shooter.weapon.spread, shooter));
                 }
-            } else if (player.weapon.name === 'flamethrower') {
+            } else if (shooter.weapon.name === 'flamethrower') {
                 for (let i = 0; i < 3; i++) {
-                    player.bullets.push(new Bullet(player.x, player.y, dirX + (Math.random() - 0.5) * 0.2, dirY + (Math.random() - 0.5) * 0.2, player.weapon.spread));
+                    shooter.bullets.push(new Bullet(shooter.x, shooter.y, dx + (Math.random() - 0.5) * 0.2, dy + (Math.random() - 0.5) * 0.2, shooter.weapon.spread, shooter));
                 }
             } else {
-                player.bullets.push(new Bullet(player.x, player.y, dirX, dirY, player.weapon.spread));
+                shooter.bullets.push(new Bullet(shooter.x, shooter.y, dx, dy, shooter.weapon.spread, shooter));
             }
 
-            player.recoilOffset.x = -dirX * player.weapon.recoil;
-            player.recoilOffset.y = -dirY * player.weapon.recoil;
-            setTimeout(() => { player.recoilOffset.x = 0; player.recoilOffset.y = 0; }, 100);
-            muzzleFlashes.push(new MuzzleFlash(player.x + dirX * 20, player.y + dirY * 20, player.angle));
+            shooter.recoilOffset.x = -dx * shooter.weapon.recoil;
+            shooter.recoilOffset.y = -dy * shooter.weapon.recoil;
+            setTimeout(() => { shooter.recoilOffset.x = 0; shooter.recoilOffset.y = 0; }, 100);
+            muzzleFlashes.push(new MuzzleFlash(shooter.x + dx * 20, shooter.y + dy * 20, shooter.angle));
+        }
+
+        // Toggle teammate
+        function toggleTeammate() {
+            teammate.active = !teammate.active;
         }
 
         // Spawn enemies
@@ -452,13 +450,13 @@
             return dist < obj.radius + bush.radius;
         }
 
-        // Upgrade system
+        // Upgrade system (No explosives)
         function buyUpgrade(type) {
             if (type === 'shotgun' && score >= 100) {
-                player.weapon = { name: 'shotgun', damage: 20, rate: 800, spread: 0.2, recoil: 5, shots: 5, range: Infinity, explosionRadius: 0 };
+                player.weapon = { name: 'shotgun', damage: 20, rate: 800, spread: 0.2, recoil: 5, shots: 5, range: Infinity };
                 score -= 100;
             } else if (type === 'rifle' && score >= 500) {
-                player.weapon = { name: 'rifle', damage: 15, rate: 200, spread: 0.05, recoil: 3, shots: 1, range: Infinity, explosionRadius: 0 };
+                player.weapon = { name: 'rifle', damage: 15, rate: 200, spread: 0.05, recoil: 3, shots: 1, range: Infinity };
                 score -= 500;
             } else if (type === 'speed' && score >= 300) {
                 player.speed = 7;
@@ -467,14 +465,8 @@
             } else if (type === 'health' && score >= 200) {
                 player.hp = Math.min(player.hp + 50, 100);
                 score -= 200;
-            } else if (type === 'grenade' && score >= 300) {
-                player.weapon = { name: 'grenade', damage: 50, rate: 1000, spread: 0, recoil: 6, shots: 1, range: 200, explosionRadius: 50 };
-                score -= 300;
-            } else if (type === 'rocket' && score >= 700) {
-                player.weapon = { name: 'rocket', damage: 80, rate: 1500, spread: 0, recoil: 8, shots: 1, range: Infinity, explosionRadius: 80 };
-                score -= 700;
             } else if (type === 'flamethrower' && score >= 600) {
-                player.weapon = { name: 'flamethrower', damage: 5, rate: 50, spread: 0.2, recoil: 1, shots: 3, range: 100, explosionRadius: 0 };
+                player.weapon = { name: 'flamethrower', damage: 5, rate: 50, spread: 0.2, recoil: 1, shots: 3, range: 100 };
                 score -= 600;
             }
             scoreDisplay.textContent = score;
@@ -482,57 +474,31 @@
         }
 
         // Player drawing
-        function drawPlayer() {
+        function drawPlayer(shooter) {
             ctx.save();
-            ctx.translate(player.x + player.recoilOffset.x, player.y + player.recoilOffset.y);
-            ctx.rotate(player.angle);
+            ctx.translate(shooter.x + shooter.recoilOffset.x, shooter.y + shooter.recoilOffset.y);
+            ctx.rotate(shooter.angle);
 
-            const bodyGradient = ctx.createRadialGradient(0, 0, 5, 0, 0, 15);
-            bodyGradient.addColorStop(0, '#888');
+            const bodyGradient = ctx.createRadialGradient(0, 0, 5, 0, 0, shooter.radius);
+            bodyGradient.addColorStop(0, shooter === teammate ? '#00CED1' : '#888'); // Teammate is turquoise
             bodyGradient.addColorStop(1, '#444');
             ctx.beginPath();
-            ctx.arc(0, 0, 15, 0, Math.PI * 2);
+            ctx.arc(0, 0, shooter.radius, 0, Math.PI * 2);
             ctx.fillStyle = bodyGradient;
             ctx.fill();
             ctx.strokeStyle = '#222';
             ctx.lineWidth = 2;
             ctx.stroke();
 
-            const helmetGradient = ctx.createLinearGradient(0, -12, 0, -5);
-            helmetGradient.addColorStop(0, '#228B22'); // Forest green helmet
-            helmetGradient.addColorStop(1, '#006400'); // Dark green
+            const helmetGradient = ctx.createLinearGradient(0, -shooter.radius * 0.6, 0, -shooter.radius * 0.3);
+            helmetGradient.addColorStop(0, shooter === teammate ? '#00FF00' : '#228B22');
+            helmetGradient.addColorStop(1, shooter === teammate ? '#008000' : '#006400');
             ctx.beginPath();
-            ctx.arc(0, -8, 10, 0, Math.PI * 2);
+            ctx.arc(0, -shooter.radius * 0.4, shooter.radius * 0.5, 0, Math.PI * 2);
             ctx.fillStyle = helmetGradient;
             ctx.fill();
-            ctx.strokeStyle = '#004d00';
+            ctx.strokeStyle = shooter === teammate ? '#006400' : '#004d00';
             ctx.stroke();
-            ctx.beginPath();
-            ctx.arc(-3, -10, 3, 0, Math.PI);
-            ctx.fillStyle = 'rgba(255, 255, 255, 0.5)';
-            ctx.fill();
-
-            ctx.fillStyle = '#555';
-            ctx.fillRect(-8, 5, 6, 10);
-            ctx.fillRect(2, 5, 6, 10);
-            ctx.strokeStyle = '#333';
-            ctx.strokeRect(-8, 5, 6, 10);
-            ctx.strokeRect(2, 5, 6, 10);
-
-            ctx.fillStyle = '#666';
-            ctx.fillRect(-12, -2, 8, 4);
-            ctx.fillRect(10, -2, 8, 4);
-
-            ctx.fillStyle = '#333';
-            ctx.fillRect(10, -3, 15, 6);
-            ctx.fillStyle = '#222';
-            ctx.fillRect(15, -1, 10, 2);
-            ctx.strokeStyle = '#111';
-            ctx.lineWidth = 1;
-            ctx.strokeRect(10, -3, 15, 6);
-
-            ctx.fillStyle = '#000';
-            ctx.fillRect(-6, -10, 12, 3);
 
             ctx.restore();
         }
@@ -543,15 +509,15 @@
 
             // Wilderness-themed background
             const skyGradient = ctx.createLinearGradient(0, 0, 0, canvas.height);
-            skyGradient.addColorStop(0, '#87CEFA'); // Light blue sky
-            skyGradient.addColorStop(1, '#228B22'); // Forest green ground
+            skyGradient.addColorStop(0, '#87CEFA');
+            skyGradient.addColorStop(1, '#228B22');
             ctx.fillStyle = skyGradient;
             ctx.fillRect(0, 0, canvas.width, canvas.height);
 
             // Scrolling trees
             backgroundOffset += 0.5;
             if (backgroundOffset > canvas.height) backgroundOffset = 0;
-            ctx.fillStyle = '#006400'; // Dark green for trees
+            ctx.fillStyle = '#006400';
             for (let i = -1; i < 2; i++) {
                 ctx.beginPath();
                 ctx.moveTo(100, canvas.height - 50 + backgroundOffset + i * canvas.height);
@@ -577,7 +543,7 @@
 
             // Draw walls (logs)
             walls.forEach(wall => {
-                ctx.fillStyle = '#8B4513'; // Brown logs
+                ctx.fillStyle = '#8B4513';
                 ctx.fillRect(wall.x, wall.y, wall.width, wall.height);
             });
 
@@ -585,7 +551,7 @@
             bushes.forEach(bush => {
                 ctx.beginPath();
                 ctx.arc(bush.x, bush.y, bush.radius, 0, Math.PI * 2);
-                ctx.fillStyle = '#228B22'; // Green bushes
+                ctx.fillStyle = '#228B22';
                 ctx.fill();
             });
 
@@ -640,7 +606,39 @@
                 }
             }
 
-            drawPlayer();
+            // Teammate logic
+            if (teammate.active) {
+                let dx = player.x - teammate.x;
+                let dy = player.y - teammate.y;
+                let dist = Math.sqrt(dx * dx + dy * dy);
+                if (dist > 50) {  // Follow player, stay 50px away
+                    let newX = teammate.x + (dx / dist) * teammate.speed;
+                    let newY = teammate.y + (dy / dist) * teammate.speed;
+                    let collided = false;
+                    walls.forEach(wall => {
+                        if (
+                            newX + teammate.radius > wall.x &&
+                            newX - teammate.radius < wall.x + wall.width &&
+                            newY + teammate.radius > wall.y &&
+                            newY - teammate.radius < wall.y + wall.height
+                        ) {
+                            collided = true;
+                        }
+                    });
+                    if (!collided) {
+                        teammate.x = newX;
+                        teammate.y = newY;
+                    }
+                }
+                // Teammate shooting
+                if (isShooting) shoot(teammate);
+            }
+
+            drawPlayer(player);
+            if (teammate.active) drawPlayer(teammate);
+
+            // Continuous shooting
+            if (isShooting) shoot();
 
             // Player bullets
             for (let bIndex = player.bullets.length - 1; bIndex >= 0; bIndex--) {
@@ -651,16 +649,10 @@
                 let shouldRemove = bullet.x < 0 || bullet.x > canvas.width || bullet.y < 0 || bullet.y > canvas.height || bullet.distanceTraveled > bullet.range;
 
                 walls.forEach(wall => {
-                    if (checkBulletWallCollision(bullet, wall)) {
-                        shouldRemove = true;
-                        if (bullet.explosionRadius > 0 && !bullet.hasExploded) bulletsToExplode.push(bullet);
-                    }
+                    if (checkBulletWallCollision(bullet, wall)) shouldRemove = true;
                 });
                 bushes.forEach(bush => {
-                    if (checkBushCollision(bullet, bush)) {
-                        shouldRemove = true;
-                        if (bullet.explosionRadius > 0 && !bullet.hasExploded) bulletsToExplode.push(bullet);
-                    }
+                    if (checkBushCollision(bullet, bush)) shouldRemove = true;
                 });
 
                 if (shouldRemove) {
@@ -672,8 +664,7 @@
                     const enemy = enemies[eIndex];
                     if (checkCollision(bullet, enemy)) {
                         enemy.hit(bullet);
-                        if (bullet.explosionRadius > 0 && !bullet.hasExploded) bulletsToExplode.push(bullet);
-                        else player.bullets.splice(bIndex, 1);
+                        player.bullets.splice(bIndex, 1);
                         if (enemy.hp <= 0) {
                             enemies.splice(eIndex, 1);
                             score += enemy.type === 'commander' ? 50 : enemy.type === 'warrior' ? 30 : 20;
@@ -684,29 +675,42 @@
                 }
             }
 
-            // Process explosions after bullet updates
-            bulletsToExplode.forEach(bullet => {
-                bullet.explode();
-                enemies.forEach(enemy => {
-                    const dist = Math.sqrt((enemy.x - bullet.x) ** 2 + (enemy.y - bullet.y) ** 2);
-                    if (dist < bullet.explosionRadius) {
-                        enemy.hp -= bullet.damage / 10;
-                        enemy.knockback.x += (enemy.x - bullet.x) / dist * 5;
-                        enemy.knockback.y += (enemy.y - bullet.y) / dist * 5;
-                        if (enemy.hp <= 0) {
-                            const eIndex = enemies.indexOf(enemy);
-                            if (eIndex !== -1) {
+            // Teammate bullets
+            if (teammate.active) {
+                for (let bIndex = teammate.bullets.length - 1; bIndex >= 0; bIndex--) {
+                    const bullet = teammate.bullets[bIndex];
+                    bullet.update();
+                    bullet.draw();
+
+                    let shouldRemove = bullet.x < 0 || bullet.x > canvas.width || bullet.y < 0 || bullet.y > canvas.height || bullet.distanceTraveled > bullet.range;
+
+                    walls.forEach(wall => {
+                        if (checkBulletWallCollision(bullet, wall)) shouldRemove = true;
+                    });
+                    bushes.forEach(bush => {
+                        if (checkBushCollision(bullet, bush)) shouldRemove = true;
+                    });
+
+                    if (shouldRemove) {
+                        teammate.bullets.splice(bIndex, 1);
+                        continue;
+                    }
+
+                    for (let eIndex = enemies.length - 1; eIndex >= 0; eIndex--) {
+                        const enemy = enemies[eIndex];
+                        if (checkCollision(bullet, enemy)) {
+                            enemy.hit(bullet);
+                            teammate.bullets.splice(bIndex, 1);
+                            if (enemy.hp <= 0) {
                                 enemies.splice(eIndex, 1);
                                 score += enemy.type === 'commander' ? 50 : enemy.type === 'warrior' ? 30 : 20;
                                 scoreDisplay.textContent = score;
                             }
+                            break;
                         }
                     }
-                });
-                const bIndex = player.bullets.indexOf(bullet);
-                if (bIndex !== -1) player.bullets.splice(bIndex, 1);
-            });
-            bulletsToExplode = [];
+                }
+            }
 
             // Enemies
             enemies.forEach((enemy, eIndex) => {
@@ -722,6 +726,11 @@
                         alert(`Game Over! Score: ${score}`);
                         document.location.reload();
                     }
+                } else if (teammate.active && checkCollision(teammate, enemy)) {
+                    teammate.hp -= 10;
+                    enemy.die();
+                    enemies.splice(eIndex, 1);
+                    if (teammate.hp <= 0) teammate.active = false;  // Teammate "dies"
                 }
             });
 
@@ -748,6 +757,10 @@
                         alert(`Game Over! Score: ${score}`);
                         document.location.reload();
                     }
+                } else if (teammate.active && checkCollision(bullet, teammate)) {
+                    teammate.hp -= 5;
+                    enemyBullets.splice(bIndex, 1);
+                    if (teammate.hp <= 0) teammate.active = false;
                 }
             }
 
